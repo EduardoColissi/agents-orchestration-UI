@@ -1,6 +1,6 @@
 # Getnet Support — Chat UI
 
-A small Next.js chat interface for the [multi-agent support API](../agents-orchestration). Dark theme with a purple accent, built with shadcn/ui components (Tailwind v4).
+A small Next.js chat interface for the [multi-agent support API](../agents-orchestration). Dark theme with Getnet red as the accent, built with shadcn/ui components (Tailwind v4).
 
 Each assistant message shows the answer plus what the orchestration did: route, agents that ran (including the Personality stage), tools used, sources, human-handoff status and the `trace_id` to look up in the API logs.
 

@@ -2,31 +2,31 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* shadcn/ui tokens — dark theme with a purple accent (always dark; see layout.tsx) */
+/* shadcn/ui tokens — dark theme with Getnet red as the accent (always dark; see layout.tsx) */
 :root {
   --radius: 0.75rem;
-  --background: oklch(0.14 0.02 290);
-  --foreground: oklch(0.96 0.01 290);
-  --card: oklch(0.18 0.025 290);
-  --card-foreground: oklch(0.96 0.01 290);
-  --popover: oklch(0.18 0.025 290);
-  --popover-foreground: oklch(0.96 0.01 290);
-  --primary: oklch(0.62 0.22 295);
+  --background: oklch(0.14 0.01 20);
+  --foreground: oklch(0.96 0.005 20);
+  --card: oklch(0.18 0.012 20);
+  --card-foreground: oklch(0.96 0.005 20);
+  --popover: oklch(0.18 0.012 20);
+  --popover-foreground: oklch(0.96 0.005 20);
+  --primary: oklch(0.58 0.23 25);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.24 0.03 290);
-  --secondary-foreground: oklch(0.93 0.01 290);
-  --muted: oklch(0.23 0.025 290);
-  --muted-foreground: oklch(0.68 0.02 290);
-  --accent: oklch(0.28 0.06 295);
-  --accent-foreground: oklch(0.97 0.01 290);
-  --destructive: oklch(0.62 0.2 25);
-  --border: oklch(0.28 0.03 290);
-  --input: oklch(0.28 0.03 290);
-  --ring: oklch(0.62 0.22 295);
-  --chart-1: oklch(0.62 0.22 295);
+  --secondary: oklch(0.24 0.015 20);
+  --secondary-foreground: oklch(0.93 0.005 20);
+  --muted: oklch(0.23 0.012 20);
+  --muted-foreground: oklch(0.68 0.01 20);
+  --accent: oklch(0.28 0.06 25);
+  --accent-foreground: oklch(0.97 0.005 20);
+  --destructive: oklch(0.7 0.19 45);
+  --border: oklch(0.28 0.015 20);
+  --input: oklch(0.28 0.015 20);
+  --ring: oklch(0.58 0.23 25);
+  --chart-1: oklch(0.58 0.23 25);
   --chart-2: oklch(0.7 0.15 200);
   --chart-3: oklch(0.75 0.17 80);
-  --chart-4: oklch(0.65 0.2 25);
+  --chart-4: oklch(0.62 0.22 295);
   --chart-5: oklch(0.72 0.17 150);
 }
 
@@ -62,8 +62,8 @@
   body {
     @apply bg-background text-foreground antialiased;
     background-image:
-      radial-gradient(60rem 30rem at 20% -10%, oklch(0.35 0.15 295 / 0.35), transparent 60%),
-      radial-gradient(40rem 20rem at 100% 100%, oklch(0.3 0.12 320 / 0.25), transparent 60%);
+      radial-gradient(60rem 30rem at 20% -10%, oklch(0.35 0.15 25 / 0.35), transparent 60%),
+      radial-gradient(40rem 20rem at 100% 100%, oklch(0.3 0.12 10 / 0.25), transparent 60%);
     background-attachment: fixed;
   }
 }
