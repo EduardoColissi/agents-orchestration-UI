@@ -1,26 +1,91 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Bot, Loader2, SendHorizontal, Sparkles, User } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Bot, Headset, Loader2, MessageSquarePlus, SendHorizontal, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { MessageMeta } from '@/components/message-meta';
-import { EXAMPLE_PROMPTS, sendChat, type ChatResponse } from '@/lib/api';
+import { api, ApiError, EXAMPLE_PROMPTS, type ChatResponse, type ConversationMessage, type ConversationView } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-type Message =
-  | { id: string; role: 'user'; text: string }
-  | { id: string; role: 'assistant'; text: string; response?: ChatResponse; error?: boolean };
+type Message = {
+  id: string;
+  role: 'merchant' | 'assistant' | 'operator';
+  text: string;
+  response?: ChatResponse;
+  error?: boolean;
+  /** Set when the message is the outcome of a human handoff (operator reply or resumed agent). */
+  handoffId?: string | null;
+};
 
-export function Chat() {
-  const [userId, setUserId] = useState('cliente1988');
-  const [input, setInput] = useState('');
+type OpenHandoff = ConversationView['open_handoff'];
+
+const POLL_MS = 5000;
+const storageKey = (user: string) => `getnet:conversation:${user}`;
+
+const readStored = (user: string) => {
+  try {
+    return localStorage.getItem(storageKey(user));
+  } catch {
+    return null;
+  }
+};
+const writeStored = (user: string, id: string | null) => {
+  try {
+    if (id) localStorage.setItem(storageKey(user), id);
+    else localStorage.removeItem(storageKey(user));
+  } catch {
+    // Private mode: the conversation still works, it just won't survive a reload.
+  }
+};
+
+const fromServer = (m: ConversationMessage, i: number): Message => ({ id: `${m.created_at}-${i}`, role: m.role, text: m.content, handoffId: m.handoff_id });
+
+export function Chat({ user }: { user: string }) {
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [openHandoff, setOpenHandoff] = useState<OpenHandoff>(null);
+  const [input, setInput] = useState('');
   const [pending, setPending] = useState(false);
+  const [restoring, setRestoring] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Restore the last conversation of this user after a reload (memory lives in the backend).
+  useEffect(() => {
+    const stored = readStored(user);
+    if (!stored) return setRestoring(false);
+    api
+      .conversation(stored)
+      .then((view) => {
+        setConversationId(view.id);
+        setMessages(view.messages.map(fromServer));
+        setOpenHandoff(view.open_handoff);
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 404) writeStored(user, null);
+      })
+      .finally(() => setRestoring(false));
+  }, [user]);
+
+  // While a request is with a human, poll the conversation for the operator's outcome.
+  const poll = useCallback(async () => {
+    if (!conversationId || !openHandoff) return;
+    const view = await api.conversation(conversationId).catch(() => null);
+    if (!view) return;
+    const outcomes = view.messages.filter((m) => m.handoff_id === openHandoff.id);
+    if (outcomes.length) {
+      setMessages((current) => (current.some((m) => m.handoffId === openHandoff.id) ? current : [...current, ...outcomes.map(fromServer)]));
+    }
+    setOpenHandoff(view.open_handoff);
+  }, [conversationId, openHandoff]);
+
+  useEffect(() => {
+    if (!openHandoff) return;
+    const timer = setInterval(() => void poll(), POLL_MS);
+    return () => clearInterval(timer);
+  }, [openHandoff, poll]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -30,11 +95,15 @@ export function Chat() {
     const message = text.trim();
     if (!message || pending) return;
     setInput('');
-    setMessages((m) => [...m, { id: crypto.randomUUID(), role: 'user', text: message }]);
+    setMessages((m) => [...m, { id: crypto.randomUUID(), role: 'merchant', text: message }]);
     setPending(true);
     try {
-      const response = await sendChat(message, userId.trim() || 'cliente1988');
+      const response = await api.chat(message, conversationId ?? undefined);
+      setConversationId(response.conversation_id);
+      writeStored(user, response.conversation_id);
       setMessages((m) => [...m, { id: response.trace_id, role: 'assistant', text: response.answer, response }]);
+      const h = response.handoff;
+      if (h.handoff_id && h.kind && h.status && h.status !== 'completed' && h.status !== 'expired') setOpenHandoff({ id: h.handoff_id, kind: h.kind, status: h.status });
     } catch (err) {
       setMessages((m) => [...m, { id: crypto.randomUUID(), role: 'assistant', text: (err as Error).message, error: true }]);
     } finally {
@@ -42,28 +111,45 @@ export function Chat() {
     }
   }
 
+  function newConversation() {
+    writeStored(user, null);
+    setConversationId(null);
+    setMessages([]);
+    setOpenHandoff(null);
+  }
+
   return (
-    <div className="flex min-h-[calc(100dvh-3rem)] flex-col gap-4">
-      <header className="flex flex-wrap items-center gap-3">
-        <div className="bg-primary/15 text-primary flex size-10 items-center justify-center rounded-xl">
-          <Sparkles className="size-5" />
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="text-muted-foreground flex items-center gap-2 text-xs">
+        <span className="truncate font-mono">{conversationId ? `conversation ${conversationId}` : 'new conversation'}</span>
+        <Button variant="ghost" size="sm" className="ml-auto" onClick={newConversation} disabled={pending || (!conversationId && messages.length === 0)}>
+          <MessageSquarePlus /> New conversation
+        </Button>
+      </div>
+
+      {openHandoff && (
+        <div className="border-chart-3/40 bg-chart-3/10 text-chart-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs">
+          <Headset className="size-4 shrink-0" />
+          <span>
+            Request <code className="font-mono">{openHandoff.id}</code> is with a Getnet specialist ({openHandoff.kind === 'approval' ? 'waiting for approval' : 'waiting for a reply'}).
+            This chat updates automatically when they answer — you can keep asking other questions meanwhile.
+          </span>
+          <Loader2 className="ml-auto size-3.5 shrink-0 animate-spin" />
         </div>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-lg font-semibold tracking-tight">Getnet Support</h1>
-          <p className="text-muted-foreground text-xs">Router · Knowledge · Support · Escalation · Personality</p>
-        </div>
-        <label className="text-muted-foreground flex items-center gap-2 text-xs">
-          user_id
-          <Input value={userId} onChange={(e) => setUserId(e.target.value)} className="h-8 w-36 font-mono text-xs" />
-        </label>
-      </header>
+      )}
 
       <Card className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden py-0">
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="flex flex-col gap-4 p-4">
-            {messages.length === 0 && (
+            {restoring && (
+              <div className="text-muted-foreground flex items-center justify-center gap-2 py-10 text-sm">
+                <Loader2 className="size-4 animate-spin" /> Restoring your conversation…
+              </div>
+            )}
+
+            {!restoring && messages.length === 0 && (
               <div className="text-muted-foreground mx-auto max-w-md py-10 text-center text-sm">
-                <p className="mb-4">Ask about Getnet products, your sales and card machines, or anything else.</p>
+                <p className="mb-4">Ask about Getnet products, your sales and card machines, or anything else. Follow-up questions keep the context.</p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {EXAMPLE_PROMPTS.map((prompt) => (
                     <Button key={prompt} variant="outline" size="sm" className="h-auto whitespace-normal text-left text-xs" onClick={() => submit(prompt)}>
@@ -75,19 +161,33 @@ export function Chat() {
             )}
 
             {messages.map((m) => (
-              <div key={m.id} className={cn('flex gap-3', m.role === 'user' && 'flex-row-reverse')}>
-                <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-full', m.role === 'user' ? 'bg-secondary' : 'bg-primary/20 text-primary')}>
-                  {m.role === 'user' ? <User className="size-4" /> : <Bot className="size-4" />}
+              <div key={m.id} className={cn('flex gap-3', m.role === 'merchant' && 'flex-row-reverse')}>
+                <div
+                  className={cn(
+                    'flex size-8 shrink-0 items-center justify-center rounded-full',
+                    m.role === 'merchant' && 'bg-secondary',
+                    m.role === 'assistant' && 'bg-primary/20 text-primary',
+                    m.role === 'operator' && 'bg-chart-2/20 text-chart-2',
+                  )}
+                >
+                  {m.role === 'merchant' ? <User className="size-4" /> : m.role === 'operator' ? <Headset className="size-4" /> : <Bot className="size-4" />}
                 </div>
                 <div
                   className={cn(
                     'max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
-                    m.role === 'user' ? 'bg-primary text-primary-foreground rounded-tr-sm' : 'bg-muted rounded-tl-sm',
-                    m.role === 'assistant' && m.error && 'border-destructive/40 text-destructive border',
+                    m.role === 'merchant' && 'bg-primary text-primary-foreground rounded-tr-sm',
+                    m.role === 'assistant' && 'bg-muted rounded-tl-sm',
+                    m.role === 'operator' && 'border-chart-2/40 bg-chart-2/10 rounded-tl-sm border',
+                    m.error && 'border-destructive/40 text-destructive border',
                   )}
                 >
+                  {m.handoffId && m.role !== 'merchant' && (
+                    <p className="text-muted-foreground mb-1 text-[11px] font-medium">
+                      {m.role === 'operator' ? 'Getnet specialist' : 'After the specialist’s decision'} · <span className="font-mono">{m.handoffId}</span>
+                    </p>
+                  )}
                   <p className="whitespace-pre-wrap">{m.text}</p>
-                  {m.role === 'assistant' && m.response && <MessageMeta response={m.response} />}
+                  {m.response && <MessageMeta response={m.response} />}
                 </div>
               </div>
             ))}
@@ -124,9 +224,9 @@ export function Chat() {
             }}
             placeholder="Type your message… (Enter to send, Shift+Enter for a new line)"
             className="max-h-40 min-h-10 resize-none"
-            disabled={pending}
+            disabled={pending || restoring}
           />
-          <Button type="submit" size="icon" disabled={pending || !input.trim()} aria-label="Send">
+          <Button type="submit" size="icon" disabled={pending || restoring || !input.trim()} aria-label="Send">
             {pending ? <Loader2 className="animate-spin" /> : <SendHorizontal />}
           </Button>
         </form>

@@ -1,4 +1,4 @@
-import { ExternalLink, LifeBuoy, Route, Wrench } from 'lucide-react';
+import { ExternalLink, GitBranchPlus, LifeBuoy, Route, Wrench } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import type { ChatResponse } from '@/lib/api';
 
@@ -9,8 +9,9 @@ const ROUTE_STYLES: Record<ChatResponse['route'], string> = {
   blocked: 'bg-destructive/20 text-destructive border-destructive/30',
 };
 
-/** Routing/tool/source details shown under an assistant message. */
+/** Routing/tool/source/handoff details shown under an assistant message. */
 export function MessageMeta({ response }: { response: ChatResponse }) {
+  const { handoff } = response;
   return (
     <div className="mt-3 space-y-2 border-t border-border/60 pt-3 text-xs">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -24,6 +25,13 @@ export function MessageMeta({ response }: { response: ChatResponse }) {
         ))}
         <span className="text-muted-foreground ml-auto tabular-nums">{(response.latency_ms / 1000).toFixed(1)} s</span>
       </div>
+
+      {response.replans?.map((r) => (
+        <div key={`${r.after}-${r.signal}`} className="text-muted-foreground flex items-center gap-1.5">
+          <GitBranchPlus className="size-3" />
+          Replanned after {r.after}: <code className="bg-muted rounded px-1.5 py-0.5">{r.signal}</code> → {r.action.replace('_', ' ')}
+        </div>
+      ))}
 
       {response.tools_used.length > 0 && (
         <div className="text-muted-foreground flex flex-wrap items-center gap-1.5">
@@ -49,11 +57,16 @@ export function MessageMeta({ response }: { response: ChatResponse }) {
         </ul>
       )}
 
-      {response.handoff.required && (
-        <div className="text-chart-3 flex items-center gap-1.5">
+      {handoff.required && (
+        <div className="text-chart-3 flex flex-wrap items-center gap-1.5">
           <LifeBuoy className="size-3" />
-          Human handoff · {response.handoff.reason}
-          {response.handoff.ticket_id && <code className="bg-muted rounded px-1.5 py-0.5">{response.handoff.ticket_id}</code>}
+          Human handoff · {handoff.reason}
+          {handoff.handoff_id && (
+            <code className="bg-muted rounded px-1.5 py-0.5">
+              {handoff.handoff_id} · {handoff.kind} · {handoff.status}
+            </code>
+          )}
+          {handoff.ticket_id && <code className="bg-muted rounded px-1.5 py-0.5">{handoff.ticket_id}</code>}
         </div>
       )}
 
