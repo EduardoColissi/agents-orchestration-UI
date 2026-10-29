@@ -53,8 +53,11 @@ check('turn 2 (follow-up) continues it', r.status === 200 && r.body.conversation
 
 r = await merchant(`/api/backend/conversations/${conversationId}`);
 check('the conversation is restorable (history)', r.status === 200 && r.body.messages?.length >= 4, `${r.body.messages?.length} messages`);
-// The 8B sometimes answers turn 1 with "not found", which opens an assist handoff: the operator answers it below.
-const assistId = r.body.open_handoff?.kind === 'assist' ? r.body.open_handoff.id : null;
+// Asking for a person is a deterministic escalation: an assist handoff the operator answers below.
+r = await post(merchant, '/api/backend/chat', { message: 'Quero falar com um atendente' });
+const assistConversationId = r.body.conversation_id;
+const assistId = r.body.handoff?.kind === 'assist' ? r.body.handoff.handoff_id : null;
+check('asking for a person opens an assist handoff', r.status === 200 && !!assistId, `${r.body.route} · ${assistId}`);
 
 // One open handoff per conversation: the replacement goes in a new conversation.
 r = await post(merchant, '/api/backend/chat', { message: 'Quero trocar minha Get Smart GS-1988-0001 por uma nova' });
@@ -94,13 +97,11 @@ r = await merchant(`/api/backend/conversations/${replacementConversation}`);
 const last = r.body.messages?.at(-1);
 check('merchant receives the outcome in the chat', last?.handoff_id === handoffId && /TCK-/.test(last?.content ?? '') && r.body.open_handoff === null, last?.content?.slice(0, 120));
 
-if (assistId) {
-  r = await operator(`/api/backend/operator/handoffs/${assistId}`);
-  r = await post(operator, `/api/backend/operator/handoffs/${assistId}/resolve`, { action: 'reply', message: 'Olá! Aqui é a Ana: segure o botão por 10 segundos para reiniciar.', expected_version: r.body.version });
-  check('operator replies to the assist handoff', r.status === 200 && r.body.message?.role === 'operator');
-  r = await merchant(`/api/backend/conversations/${conversationId}`);
-  check('merchant sees the operator reply (UTF-8 intact)', r.body.messages?.at(-1)?.content.startsWith('Olá! Aqui é a Ana'));
-}
+r = await operator(`/api/backend/operator/handoffs/${assistId}`);
+r = await post(operator, `/api/backend/operator/handoffs/${assistId}/resolve`, { action: 'reply', message: 'Olá! Aqui é a Ana: segure o botão por 10 segundos para reiniciar.', expected_version: r.body.version });
+check('operator replies to the assist handoff', r.status === 200 && r.body.message?.role === 'operator');
+r = await merchant(`/api/backend/conversations/${assistConversationId}`);
+check('merchant sees the operator reply (UTF-8 intact)', r.body.messages?.at(-1)?.content.startsWith('Olá! Aqui é a Ana'));
 
 r = await operator('/api/backend/operator/metrics');
 check('operator metrics', r.status === 200 && r.body.turns > 0, `turns ${r.body.turns} · p95 ${r.body.turn_latency_ms?.p95} ms`);

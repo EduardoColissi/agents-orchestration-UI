@@ -30,10 +30,10 @@ The browser never calls the API directly and never sees the JWT:
 ```bash
 npm run typecheck
 npm run build
-npm run smoke             # with the UI running (npm start) and the backend up: 25 end-to-end checks through the UI routes
+npm run smoke             # with the UI running (npm start) and the backend up: 26 end-to-end checks through the UI routes
 ```
 
-`scripts/smoke.mjs` signs in as a merchant and as an operator and goes through the whole flow: redirects, httpOnly cookie, a multi-turn conversation, a replacement request queued for approval, the operator reading the evidence and approving, the 409 on a second approval, the outcome arriving in the merchant's conversation, an operator reply with UTF-8 text, role separation, the allowlist and sign out.
+`scripts/smoke.mjs` signs in as a merchant and as an operator and goes through the whole flow: redirects, httpOnly cookie, a multi-turn conversation, a replacement request queued for approval, the operator reading the evidence and approving, the 409 on a second approval, the outcome arriving in the merchant's conversation, a request for a person answered by the operator (UTF-8 intact), role separation, the allowlist and sign out.
 
 ## Structure
 
