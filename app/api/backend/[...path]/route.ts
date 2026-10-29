@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { backendFetch, getSession } from '@/lib/session';
+import { backendFetch, getSession, isSameOriginJson } from '@/lib/session';
 
 /**
  * Authenticated proxy to the backend. Only the routes the UI needs are forwarded (allowlist);
@@ -20,6 +20,7 @@ type Context = { params: Promise<{ path: string[] }> };
 async function proxy(method: 'GET' | 'POST', request: Request, { params }: Context) {
   const path = (await params).path.join('/');
   if (!ALLOWED.some(([m, re]) => m === method && re.test(path))) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (method === 'POST' && !isSameOriginJson(request)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   if (!(await getSession())) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
 
   const search = new URL(request.url).search;

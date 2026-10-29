@@ -99,7 +99,7 @@ const backend = <T>(path: string, init?: RequestInit) => call<T>(`/api/backend/$
 
 export const api = {
   login: (username: string, password: string) => call<{ sub: string; role: Role }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
-  logout: () => call<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  logout: () => call<{ ok: boolean }>('/api/auth/logout', { method: 'POST', body: '{}' }),
   chat: (message: string, conversationId?: string) =>
     backend<ChatResponse>('chat', { method: 'POST', body: JSON.stringify({ message, ...(conversationId ? { conversation_id: conversationId } : {}) }) }),
   conversation: (id: string) => backend<ConversationView>(`conversations/${id}`),

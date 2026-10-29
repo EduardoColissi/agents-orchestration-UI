@@ -5,7 +5,6 @@ import { cookies } from 'next/headers';
 export const API_URL = process.env.API_URL ?? 'http://localhost:3000';
 
 const TOKEN_COOKIE = 'getnet_token';
-const USER_COOKIE = 'getnet_user';
 
 export type Role = 'merchant' | 'operator';
 
@@ -14,30 +13,40 @@ export interface Session {
   role: Role;
 }
 
-/** Who is signed in, for routing the UI. The backend still authorizes every call with the token. */
+/**
+ * Who is signed in, read from the token's claims (not verified here: this only routes the UI;
+ * the backend verifies the signature on every call). Expired tokens count as signed out.
+ */
 export async function getSession(): Promise<Session | null> {
-  const store = await cookies();
-  const raw = store.get(USER_COOKIE)?.value;
-  if (!raw || !store.get(TOKEN_COOKIE)) return null;
+  const token = (await cookies()).get(TOKEN_COOKIE)?.value;
+  if (!token) return null;
   try {
-    const session = JSON.parse(raw) as Session;
-    return session.sub && (session.role === 'merchant' || session.role === 'operator') ? session : null;
+    const claims = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as { sub?: unknown; role?: unknown; exp?: unknown };
+    if (typeof claims.exp === 'number' && claims.exp * 1000 < Date.now()) return null;
+    return typeof claims.sub === 'string' && (claims.role === 'merchant' || claims.role === 'operator') ? { sub: claims.sub, role: claims.role } : null;
   } catch {
     return null;
   }
 }
 
-export async function setSession(token: string, session: Session, maxAgeSeconds: number): Promise<void> {
-  const store = await cookies();
-  const options = { httpOnly: true, sameSite: 'lax' as const, secure: process.env.NODE_ENV === 'production', path: '/', maxAge: maxAgeSeconds };
-  store.set(TOKEN_COOKIE, token, options);
-  store.set(USER_COOKIE, JSON.stringify(session), options);
+export async function setSession(token: string, maxAgeSeconds: number): Promise<void> {
+  (await cookies()).set(TOKEN_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: maxAgeSeconds });
 }
 
 export async function clearSession(): Promise<void> {
-  const store = await cookies();
-  store.delete(TOKEN_COOKIE);
-  store.delete(USER_COOKIE);
+  (await cookies()).delete(TOKEN_COOKIE);
+}
+
+/**
+ * CSRF guard for state-changing routes: SameSite=Lax still lets a top-level cross-site form POST
+ * through (and same-site pages on other ports), so POSTs must come from this origin with JSON.
+ */
+export function isSameOriginJson(request: Request): boolean {
+  const origin = request.headers.get('origin');
+  const fetchSite = request.headers.get('sec-fetch-site');
+  const contentType = request.headers.get('content-type') ?? '';
+  const sameOrigin = origin ? origin === new URL(request.url).origin : fetchSite === null || fetchSite === 'same-origin';
+  return sameOrigin && (fetchSite === null || fetchSite === 'same-origin') && contentType.startsWith('application/json');
 }
 
 /** Calls the backend with the session's bearer token. An expired or invalid token ends the session. */

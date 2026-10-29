@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bot, Headset, Loader2, MessageSquarePlus, SendHorizontal, User } from 'lucide-react';
+import { Bot, Headset, Loader2, MessageSquarePlus, RotateCw, SendHorizontal, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -50,30 +50,41 @@ export function Chat({ user }: { user: string }) {
   const [input, setInput] = useState('');
   const [pending, setPending] = useState(false);
   const [restoring, setRestoring] = useState(true);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  /** The conversation the UI is showing now: late poll results for another one are dropped. */
+  const currentId = useRef<string | null>(null);
 
   // Restore the last conversation of this user after a reload (memory lives in the backend).
-  useEffect(() => {
+  const restore = useCallback(() => {
     const stored = readStored(user);
     if (!stored) return setRestoring(false);
+    setRestoring(true);
+    setRestoreError(null);
     api
       .conversation(stored)
       .then((view) => {
+        currentId.current = view.id;
         setConversationId(view.id);
         setMessages(view.messages.map(fromServer));
         setOpenHandoff(view.open_handoff);
       })
       .catch((err) => {
+        // 404: the conversation is gone. Anything else: keep the id, so a reply to an open
+        // handoff is not lost in a new conversation, and let the merchant retry.
         if (err instanceof ApiError && err.status === 404) writeStored(user, null);
+        else setRestoreError((err as Error).message);
       })
       .finally(() => setRestoring(false));
   }, [user]);
+
+  useEffect(() => restore(), [restore]);
 
   // While a request is with a human, poll the conversation for the operator's outcome.
   const poll = useCallback(async () => {
     if (!conversationId || !openHandoff) return;
     const view = await api.conversation(conversationId).catch(() => null);
-    if (!view) return;
+    if (!view || view.id !== currentId.current) return;
     const outcomes = view.messages.filter((m) => m.handoff_id === openHandoff.id);
     if (outcomes.length) {
       setMessages((current) => (current.some((m) => m.handoffId === openHandoff.id) ? current : [...current, ...outcomes.map(fromServer)]));
@@ -99,6 +110,7 @@ export function Chat({ user }: { user: string }) {
     setPending(true);
     try {
       const response = await api.chat(message, conversationId ?? undefined);
+      currentId.current = response.conversation_id;
       setConversationId(response.conversation_id);
       writeStored(user, response.conversation_id);
       setMessages((m) => [...m, { id: response.trace_id, role: 'assistant', text: response.answer, response }]);
@@ -112,6 +124,8 @@ export function Chat({ user }: { user: string }) {
   }
 
   function newConversation() {
+    currentId.current = null;
+    setRestoreError(null);
     writeStored(user, null);
     setConversationId(null);
     setMessages([]);
@@ -126,6 +140,15 @@ export function Chat({ user }: { user: string }) {
           <MessageSquarePlus /> New conversation
         </Button>
       </div>
+
+      {restoreError && (
+        <div className="border-destructive/40 bg-destructive/10 text-destructive flex items-center gap-2 rounded-xl border px-3 py-2 text-xs">
+          <span>Could not load your conversation ({restoreError}).</span>
+          <Button variant="ghost" size="sm" className="ml-auto" onClick={restore}>
+            <RotateCw /> Retry
+          </Button>
+        </div>
+      )}
 
       {openHandoff && (
         <div className="border-chart-3/40 bg-chart-3/10 text-chart-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs">
@@ -147,7 +170,7 @@ export function Chat({ user }: { user: string }) {
               </div>
             )}
 
-            {!restoring && messages.length === 0 && (
+            {!restoring && !restoreError && messages.length === 0 && (
               <div className="text-muted-foreground mx-auto max-w-md py-10 text-center text-sm">
                 <p className="mb-4">Ask about Getnet products, your sales and card machines, or anything else. Follow-up questions keep the context.</p>
                 <div className="flex flex-wrap justify-center gap-2">
@@ -224,9 +247,9 @@ export function Chat({ user }: { user: string }) {
             }}
             placeholder="Type your message… (Enter to send, Shift+Enter for a new line)"
             className="max-h-40 min-h-10 resize-none"
-            disabled={pending || restoring}
+            disabled={pending || restoring || !!restoreError}
           />
-          <Button type="submit" size="icon" disabled={pending || restoring || !input.trim()} aria-label="Send">
+          <Button type="submit" size="icon" disabled={pending || restoring || !!restoreError || !input.trim()} aria-label="Send">
             {pending ? <Loader2 className="animate-spin" /> : <SendHorizontal />}
           </Button>
         </form>

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Headset, LogOut, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -9,11 +10,16 @@ import { api, type Role } from '@/lib/api';
 
 export function AppHeader({ user, role, subtitle }: { user: string; role: Role; subtitle: string }) {
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
 
   async function signOut() {
-    await api.logout().catch(() => undefined);
-    router.replace('/login');
-    router.refresh();
+    try {
+      await api.logout();
+      router.replace('/login');
+      router.refresh();
+    } catch (err) {
+      setError(`Sign out failed: ${(err as Error).message}`);
+    }
   }
 
   return (
@@ -33,6 +39,7 @@ export function AppHeader({ user, role, subtitle }: { user: string; role: Role; 
       <Button variant="ghost" size="sm" onClick={signOut} aria-label="Sign out">
         <LogOut /> Sign out
       </Button>
+      {error && <p className="text-destructive w-full text-right text-xs">{error}</p>}
     </header>
   );
 }

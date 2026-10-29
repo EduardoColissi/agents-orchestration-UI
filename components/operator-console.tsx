@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Inbox, Loader2, MessageSquareReply, RefreshCw, ScrollText, ShieldCheck, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { api, ApiError, type Handoff, type HandoffDetail, type Metrics, type Trace } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-const STATUSES = ['pending', 'completed', 'expired'] as const;
+// `resuming` shows decisions whose delivery is pending or failed and may need attention.
+const STATUSES = ['pending', 'resuming', 'completed', 'expired'] as const;
 const QUEUE_POLL_MS = 5000;
 const METRICS_POLL_MS = 15000;
 
@@ -25,9 +26,12 @@ export function OperatorConsole() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
 
+  const shownStatus = useRef(status);
+  shownStatus.current = status;
   const loadQueue = useCallback(async () => {
     const res = await api.queue(status).catch(() => null);
-    if (res) setQueue(res.items);
+    // A late answer for the previous tab must not overwrite the current one.
+    if (res && shownStatus.current === status) setQueue(res.items);
   }, [status]);
 
   useEffect(() => {
@@ -130,6 +134,7 @@ function MetricsStrip({ metrics }: { metrics: Metrics }) {
 function HandoffPanel({ id, onResolved }: { id: string; onResolved: () => void }) {
   const [handoff, setHandoff] = useState<HandoffDetail | null>(null);
   const [trace, setTrace] = useState<Trace | null>(null);
+  const [traceError, setTraceError] = useState<string | null>(null);
   const [showEvidence, setShowEvidence] = useState(false);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -140,8 +145,18 @@ function HandoffPanel({ id, onResolved }: { id: string; onResolved: () => void }
     void load();
   }, [load]);
 
+  async function loadTrace() {
+    if (!handoff) return;
+    setTraceError(null);
+    try {
+      setTrace(await api.trace(handoff.conversation_id));
+    } catch (err) {
+      setTraceError((err as Error).message);
+    }
+  }
+
   async function toggleEvidence() {
-    if (!showEvidence && handoff && !trace) setTrace(await api.trace(handoff.conversation_id).catch(() => null));
+    if (!showEvidence && !trace) await loadTrace();
     setShowEvidence((v) => !v);
   }
 
@@ -169,7 +184,8 @@ function HandoffPanel({ id, onResolved }: { id: string; onResolved: () => void }
 
   const pending = handoff.status === 'pending';
   const proposed = handoff.request.proposed_action;
-  const evidence = trace?.messages.filter((m) => m.evidence).at(-1)?.evidence ?? null;
+  // The turn that opened this handoff, not the latest one: the merchant may have kept chatting.
+  const evidence = trace?.messages.filter((m) => m.evidence && m.created_at <= handoff.created_at).at(-1)?.evidence ?? null;
 
   return (
     <ScrollArea className="h-full max-h-[calc(100dvh-14rem)]">
@@ -224,7 +240,16 @@ function HandoffPanel({ id, onResolved }: { id: string; onResolved: () => void }
           <Button variant="outline" size="sm" onClick={() => void toggleEvidence()}>
             <ScrollText /> {showEvidence ? 'Hide evidence' : 'Show evidence (audited)'}
           </Button>
+          {showEvidence && traceError && (
+            <p className="text-destructive text-xs">
+              Could not load the evidence ({traceError}).{' '}
+              <button className="underline" onClick={() => void loadTrace()}>
+                Retry
+              </button>
+            </p>
+          )}
           {showEvidence &&
+            !traceError &&
             (evidence ? (
               <div className="space-y-2 text-xs">
                 {evidence.route_decision && (
@@ -251,7 +276,7 @@ function HandoffPanel({ id, onResolved }: { id: string; onResolved: () => void }
                 )}
               </div>
             ) : (
-              <p className="text-muted-foreground text-xs">No tool evidence for this conversation.</p>
+              <p className="text-muted-foreground text-xs">No tool evidence for the turn that opened this handoff.</p>
             ))}
         </section>
 
