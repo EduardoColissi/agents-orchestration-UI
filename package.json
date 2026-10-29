@@ -1,14 +1,15 @@
 {
   "name": "agents-orchestration-ui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Chat UI for the Getnet multi-agent support API",
+  "description": "Chat and operator UI for the Getnet multi-agent support API (v2)",
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@radix-ui/react-scroll-area": "^1.2.0",

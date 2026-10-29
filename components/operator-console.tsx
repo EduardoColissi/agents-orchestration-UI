@@ -199,11 +199,11 @@ function HandoffPanel({ id, onResolved }: { id: string; onResolved: () => void }
 
         {proposed && (
           <section className="space-y-1">
-            <h3 className="text-muted-foreground text-xs font-medium uppercase">Action waiting for approval</h3>
+            <h3 className="text-muted-foreground text-xs font-medium uppercase">{pending ? 'Action waiting for approval' : 'Proposed action'}</h3>
             <div className="border-chart-3/40 bg-chart-3/10 rounded-lg border px-3 py-2">
               <code className="text-chart-3 font-mono text-xs">{proposed.tool}</code>
               <pre className="mt-1 overflow-x-auto text-xs">{JSON.stringify(proposed.input, null, 2)}</pre>
-              <p className="text-muted-foreground mt-1 text-xs">Nothing has been executed yet. Approve runs it once; the agent then continues from where it stopped.</p>
+              {pending && <p className="text-muted-foreground mt-1 text-xs">Nothing has been executed yet. Approve runs it once; the agent then continues from where it stopped.</p>}
             </div>
           </section>
         )}
