@@ -123,7 +123,7 @@ export const EXAMPLE_PROMPTS = [
   "What's the difference between the Get Clássica and the Get Smart?",
   "When will the money from yesterday's sales be deposited?",
   "My card machine won't connect to the internet, what should I do?",
-  'Minha maquininha não conecta na internet',
+  'Is my card machine online right now?',
   'I want to replace my Get Smart GS-1988-0001 with a new one',
   'I want to talk to a human',
 ];
